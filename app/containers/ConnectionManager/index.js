@@ -23,8 +23,6 @@ export default function ConnectionManager({ children }) {
 
   const closeConnectorModal = () => dispatch(a.showConnectorModal(false));
   const showConnectorModal = useSelector(s.selectShowConnectorModal());
-  const closeConfirmationModal = () => dispatch(a.showConfirmationModal(false));
-  const showConfirmationModal = useSelector(s.selectShowConfirmationModal());
   const connected = useSelector(s.selectConnected());
 
   useEffect(() => {

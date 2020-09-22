@@ -6,13 +6,13 @@ import { Switch, Route } from 'react-router-dom';
 
 const Wrapper = styled.div``;
 
-export default function Component(props) {
-	return (
-		<Wrapper>
-			<TopBar />
-			<Switch>
-				<Route path="/" component={Vaults} />
-			</Switch>
-		</Wrapper>
-	);
+export default function Component() {
+  return (
+    <Wrapper>
+      <TopBar />
+      <Switch>
+        <Route path="/" component={Vaults} />
+      </Switch>
+    </Wrapper>
+  );
 }

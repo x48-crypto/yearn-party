@@ -1,11 +1,5 @@
 import React from 'react';
-import styled from 'styled-components';
-import Web3 from 'web3';
-import { useSelector } from 'react-redux';
-import { selectTokens } from 'containers/App/selectors';
 import ReactImageFallback from 'react-image-fallback';
-
-const icons = require.context('images', true);
 
 const imageStyles = `
   max-width: 40px;
@@ -15,8 +9,9 @@ const imageStyles = `
 `;
 
 export default function VaultIcon(props) {
-  const { symbol, className } = props;
-  const imageUrl = icons(`./${symbol}-logo.png`);
+  const { vault, className } = props;
+  const { vaultIcon, tokenIcon } = vault;
+  const imageUrl = vaultIcon || tokenIcon;
   return (
     <ReactImageFallback
       className={className}

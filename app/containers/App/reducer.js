@@ -1,27 +1,21 @@
 import produce from 'immer';
-import tokens from 'tokens';
-import { balanceTransform } from 'utils/string';
+import BigNumber from 'bignumber.js';
 import * as c from './constants';
 
 // The initial state of the App
 export const initialState = {
   vaults: [],
-  tokens,
-  walletBalance: '0.00',
-  vaultBalance: '0.00',
   connected: false,
   ready: false,
   loading: {
-    vaultApy: true,
     vaultPrices: true,
-    vaultPositions: true,
+    vaults: true,
   },
 };
 
 const mergeByAddress = (oldData, newData) => {
-  const unwrappedOldData = _.map(oldData, (val, key) => val);
   const mergedData = _.merge(
-    _.keyBy(unwrappedOldData, 'address'),
+    _.keyBy(oldData, 'address'),
     _.keyBy(newData, 'address'),
   );
   return mergedData;
@@ -30,60 +24,54 @@ const mergeByAddress = (oldData, newData) => {
 /* eslint-disable default-case, no-param-reassign */
 const appReducer = (state = initialState, action) =>
   produce(state, draft => {
-    const setReadyState = () => {
-      const { loading } = draft;
-      const ready = !loading.vaults;
-      draft.ready = ready;
-    };
-
-    const addOpenPosition = (acc, vault) => {
-      const { priceUsd, openDeposits } = vault;
-      if (priceUsd && openDeposits) {
-        const openDepositsUsd = balanceTransform(openDeposits) * priceUsd;
-        vault.openDepositsUsd = openDepositsUsd;
-        acc.push(vault);
+    const getTotalDepositedUsd = (acc, vault) => {
+      const { depositedAmountUsd } = vault;
+      if (depositedAmountUsd) {
+        acc = acc.plus(depositedAmountUsd);
       }
       return acc;
     };
 
-    const addEarningsUsd = (acc, vault) => {
-      const { priceUsd, earnings } = vault;
+    const addEarningsAndDepositsUsd = vault => {
+      const { priceUsd, earnings, depositedAmount } = vault;
       if (priceUsd && earnings) {
-        const earningsUsd = balanceTransform(earnings) * priceUsd;
-        vault.earningsUsd = earningsUsd;
-        acc.push(vault);
+        vault.earningsUsd = new BigNumber(earnings).times(priceUsd).toFixed();
       }
-      return acc;
+      if (depositedAmount) {
+        vault.depositedAmountUsd = new BigNumber(depositedAmount)
+          .dividedBy(10 ** 18)
+          .times(priceUsd)
+          .toFixed();
+      }
+      return vault;
     };
 
-    const getTotalOpenBalanceUsd = (acc, vault) => {
-      const { openDepositsUsd } = vault;
-      if (openDepositsUsd) {
-        acc += openDepositsUsd;
+    const getAggregateApy = (acc, vault, totalDepositedAmountUsd) => {
+      const { depositedAmountUsd, apyOneWeekSample } = vault;
+      let ratio;
+      if (totalDepositedAmountUsd !== '0') {
+        ratio = depositedAmountUsd / totalDepositedAmountUsd;
+      } else {
+        // divide by zero
+        ratio = 1;
       }
-      return acc;
-    };
-
-    const getAggregateApy = (acc, vault, totalOpenBalanceUsd) => {
-      const { openDepositsUsd, apyOneDaySample } = vault;
-      const ratio = openDepositsUsd / totalOpenBalanceUsd;
-      const weightedApy = ratio * parseFloat(apyOneDaySample);
+      const weightedApy = ratio * parseFloat(apyOneWeekSample);
       acc += weightedApy;
       return acc;
     };
 
-    const addOpenPositions = vaults => {
-      const vaultsWithOpenPositions = _.reduce(vaults, addOpenPosition, []);
-      const vaultsWithEarningsUsd = _.reduce(vaults, addEarningsUsd, []);
+    const addEarnings = vaults => {
+      const newVaults = _.map(vaults, addEarningsAndDepositsUsd);
 
-      const totalOpenBalanceUsd = _.reduce(
-        vaultsWithOpenPositions,
-        getTotalOpenBalanceUsd,
-        0,
-      );
+      const totalDepositedAmountUsd = _.reduce(
+        newVaults,
+        getTotalDepositedUsd,
+        new BigNumber(0),
+      ).toFixed();
+
       const aggregateApy = _.reduce(
-        vaultsWithOpenPositions,
-        (acc, vault) => getAggregateApy(acc, vault, totalOpenBalanceUsd),
+        newVaults,
+        (acc, vault) => getAggregateApy(acc, vault, totalDepositedAmountUsd),
         0,
       );
 
@@ -92,19 +80,19 @@ const appReducer = (state = initialState, action) =>
         if (!earningsUsd) {
           return acc;
         }
-        acc += earningsUsd;
+        acc = acc.plus(earningsUsd);
         return acc;
       };
 
       const totalVaultEarningsUsd = _.reduce(
         vaults,
         getTotalVaultEarningsUsd,
-        0,
-      );
+        new BigNumber(0),
+      ).toNumber();
 
       draft.totals = {
         totalVaultEarningsUsd,
-        totalOpenBalanceUsd,
+        totalDepositedAmountUsd,
         aggregateApy,
       };
     };
@@ -123,124 +111,124 @@ const appReducer = (state = initialState, action) =>
         draft.chainId = action.chainId;
         draft.connected = action.active;
         break;
-      case c.VAULTS_APY_LOADED: {
-        const oldVaults = state.vaults;
-        const updatedVaults = action.vaults;
-        const mergedVaults = mergeByAddress(oldVaults, updatedVaults);
-        draft.vaults = mergedVaults;
-        draft.loading.vaultApy = false;
-        break;
-      }
-      case c.VAULTS_UPDATED: {
-        const oldVaults = state.vaults;
-        const updatedVaults = action.vaults;
-        const mergedVaults = mergeByAddress(oldVaults, updatedVaults);
-        addOpenPositions(mergedVaults);
-        draft.vaults = mergedVaults;
-        break;
-      }
       case c.PRICES_LOADED: {
         const oldVaults = state.vaults;
         const updatedVaults = action.vaults;
         const mergedVaults = mergeByAddress(oldVaults, updatedVaults);
         draft.vaults = mergedVaults;
-        addOpenPositions(mergedVaults);
+        addEarnings(mergedVaults);
         draft.loading.vaultPrices = false;
         break;
       }
-      case c.VAULT_POSITIONS_LOADED: {
-        const positionsByVault = action.vaults;
-        const vaults = _.clone(state.vaults);
-        draft.vaultPositions = positionsByVault;
-
-        const aggregateEarnings = (acc, position) => {
-          const earned = position.earned ? parseInt(position.earned, 10) : 0;
-          acc = acc + earned;
-          return acc;
-        };
-
-        const aggregateDeposits = (acc, position) => {
-          const deposit = parseInt(position.deposit, 10);
-          acc = acc + deposit;
-          return acc;
-        };
-
-        const injectEarningsAndDepositsIntoVaults = vaultPosition => {
-          const { address, positions } = vaultPosition;
-          const earnings = _.reduce(positions, aggregateEarnings, 0);
-          const deposits = _.reduce(positions, aggregateDeposits, 0);
-          const vault = _.find(vaults, { address });
-          vault.earnings = earnings;
-          vault.deposits = deposits;
-        };
-        _.each(positionsByVault, injectEarningsAndDepositsIntoVaults);
-        draft.vaults = vaults;
-        draft.loading.vaultPositions = false;
-        break;
-      }
-      case c.WEB3_WAITING: {
-        const { waiting } = action;
-        draft.web3Waiting = waiting;
-        if (waiting) {
-          draft.showConfirmationModal = true;
-        } else {
-          draft.showConfirmationModal = false;
-        }
+      case c.VAULTS_LOADED: {
+        const oldVaults = _.clone(state.vaults);
+        const updatedVaults = [
+          {
+            controllerAddress: '0x9E65Ad11b299CA0Abefc2799dDB6314Ef2d91080',
+            tokenIcon:
+              'https://assets.coingecko.com/coins/images/11858/large/yCrv.png?1595203628',
+            controllerName: 'Controller',
+            symbol: 'yyDAI+yUSDC+yUSDT+yTUSD',
+            timestamp: 1600762801825,
+            address: '0x5dbcF33D8c2E976c6b560249878e6F1491Bca25c',
+            strategyAddress: '0xc999fb87AcA383A63D804A575396F65A55aa5aC8',
+            name: 'yearn Curve.fi yDAI/yUSDC/yUSDT/yTUSD',
+            vaultAlias: 'yUSD Vault',
+            delegated: false,
+            tokenAddress: '0xdF5e0e81Dff6FAF3A7e52BA697820c5e32D806A8',
+            tokenName: 'Curve.fi yDAI/yUSDC/yUSDT/yTUSD',
+            tokenSymbol: 'yDAI+yUSDC+yUSDT+yTUSD',
+            tokenSymbolAlias: 'yCRV',
+            symbolAlias: 'yUSD',
+            decimals: 18,
+            vaultIcon:
+              'https://assets.coingecko.com/coins/images/12210/large/yUSD.png?1600166557',
+            strategyName: 'StrategyCurveYCRVVoter',
+            wrapped: false,
+            apyOneWeekSample: 18.389875280469848,
+            apyInceptionSample: 69.20628081223127,
+            apyOneMonthSample: 47.87688226812791,
+            totalDeposits: '31040130299999999999998',
+            totalWithdrawals: '32551547207174188582424',
+            totalTransferredIn: '0',
+            totalTransferredOut: '0',
+            depositedShares: '40702473720021',
+            depositedAmount: '1200443360773534603246',
+            earnings: '1511.41695194518787818766',
+          },
+          {
+            controllerAddress: '0x9E65Ad11b299CA0Abefc2799dDB6314Ef2d91080',
+            tokenIcon:
+              'https://assets.coingecko.com/coins/images/11958/large/Curvefi_sbtcCrv_32.png?1596436054',
+            controllerName: 'Controller',
+            symbol: 'ycrvRenWSBTC',
+            timestamp: 1600762850556,
+            address: '0x7Ff566E1d69DEfF32a7b244aE7276b9f90e9D0f6',
+            strategyAddress: '0x134c08fAeE4F902999a616e31e0B7e42114aE320',
+            name: 'yearn Curve.fi renBTC/wBTC/sBTC',
+            vaultAlias: 'crvBTC Vault',
+            delegated: false,
+            tokenAddress: '0x075b1bb99792c9E1041bA13afEf80C91a1e70fB3',
+            tokenName: 'Curve.fi renBTC/wBTC/sBTC',
+            tokenSymbol: 'crvRenWSBTC',
+            tokenSymbolAlias: 'crvBTC',
+            symbolAlias: 'ycrvBTC',
+            decimals: 18,
+            strategyName: 'StrategyCurveBTCVoterProxy',
+            wrapped: false,
+            apyOneWeekSample: 16.848218508254302,
+            apyInceptionSample: 36.77398919487813,
+            apyOneMonthSample: 36.77398919487813,
+            totalDeposits: '3443360773534603246',
+            totalWithdrawals: '0',
+            totalTransferredIn: '509814031618954600',
+            totalTransferredOut: '0',
+            depositedShares: '3886689595445743849',
+            depositedAmount: '3990497287468911017',
+            earnings: '0.03732248231535317072',
+          },
+          {
+            controllerAddress: '0x9E65Ad11b299CA0Abefc2799dDB6314Ef2d91080',
+            tokenIcon:
+              'https://assets.coingecko.com/coins/images/11849/large/yfi-192x192.png?1598325330',
+            controllerName: 'Controller',
+            symbol: 'yYFI',
+            timestamp: 1600762835382,
+            address: '0xBA2E7Fed597fd0E3e70f5130BcDbbFE06bB94fe1',
+            strategyAddress: '0x40BD98e3ccE4F34c087a73DD3d05558733549afB',
+            name: 'yearn yearn.finance',
+            vaultAlias: 'YFI Vault',
+            delegated: false,
+            tokenAddress: '0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e',
+            tokenName: 'yearn.finance',
+            tokenSymbol: 'YFI',
+            tokenSymbolAlias: 'YFI',
+            symbolAlias: 'yYFI',
+            decimals: 18,
+            strategyName: 'StrategyCreamYFI',
+            wrapped: false,
+            apyOneWeekSample: 0.0010391510209644523,
+            apyInceptionSample: 1.6653494694564572,
+            apyOneMonthSample: 1.1788380651301567,
+            totalDeposits: '2072499999999999999',
+            totalWithdrawals: '2075558817951940219',
+            totalTransferredIn: '0',
+            totalTransferredOut: '0',
+            depositedShares: '0',
+            depositedAmount: '0',
+            earnings: '0.00305881795194022',
+          },
+        ];
+        const mergedVaults = mergeByAddress(oldVaults, updatedVaults);
+        addEarnings(mergedVaults);
+        draft.vaults = mergedVaults;
+        draft.loading.vaults = false;
         break;
       }
       case c.SHOW_CONNECTOR_MODAL:
         draft.showConnectorModal = action.showModal;
         break;
-      case c.SHOW_CONFIRMATION_MODAL:
-        draft.showConfirmationModal = action.showModal;
-        break;
-      case c.UPDATE_APPROVED_TOKENS:
-        draft.confirmationModalTokens = _.clone(action.tokens);
-        break;
-      case c.PRICES_LOADED: {
-        const oldVaults = state.vaults;
-        const updatedVaults = action.vaults;
-        const oldVaultsMapped = _.map(oldVaults, vault => vault);
-        const mergedVaults = mergeByAddress(oldVaults, updatedVaults);
-        draft.vaults = mergedVaults;
-        draft.loading.prices = false;
-        break;
-      }
-      case c.UPDATE_MODAL_STATE:
-        draft.modalState = action.newState;
-        draft.modalMetadata = action.metadata;
-        break;
-      case c.WALLET_LOADED: {
-        const walletTokens = action.payload;
-        const getBalance = (acc, token) => {
-          const { balance, decimals, vault } = token;
-          const balanceFloat = balance / 10 ** decimals;
-          if (vault) {
-            acc.vaultBalance += balanceFloat;
-          } else {
-            acc.walletBalance += balanceFloat;
-          }
-          return acc;
-        };
-        const { vaultBalance, walletBalance } = _.reduce(
-          walletTokens,
-          getBalance,
-          { vaultBalance: 0, walletBalance: 0 },
-        );
-        _.reduce();
-        draft.tokens = walletTokens;
-        draft.walletBalance = walletBalance;
-        draft.vaultBalance = vaultBalance;
-        draft.loading.wallet = false;
-        break;
-      }
-      case c.START_LOADING_WALLET:
-        draft.loading.wallet = true;
-        break;
     }
-
-    // Set ready state
-    setReadyState();
   });
 
 export default appReducer;

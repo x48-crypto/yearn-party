@@ -1,8 +1,5 @@
 import React from 'react';
 import styled from 'styled-components';
-import { useSelector } from 'react-redux';
-import * as s from 'containers/App/selectors';
-import ReactImageFallback from 'react-image-fallback';
 import VaultIcon from 'components/VaultIcon';
 import ValueWithLabel from 'components/ValueWithLabel';
 
@@ -14,18 +11,13 @@ const Name = styled.div`
 `;
 
 export default function VaultIconAndName(props) {
-  const { address } = props;
-  const vaults = useSelector(s.selectVaults());
-  const vault = _.find(
-    vaults,
-    vault => vault.address.toLowerCase() === address.toLowerCase(),
-  );
-  const { name, symbol } = vault;
+  const { vault } = props;
+  const { vaultAlias } = vault;
   return (
     <Wrapper>
-      <VaultIcon symbol={symbol} />
+      <VaultIcon vault={vault} />
       <Name>
-        <ValueWithLabel label="Vault:" value={name} />
+        <ValueWithLabel label="Vault:" value={vaultAlias} />
       </Name>
     </Wrapper>
   );
