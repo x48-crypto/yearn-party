@@ -6,6 +6,7 @@ import MetaMask from './icn-metamask.svg';
 import TrustWallet from './trustWallet.png';
 import Trezor from './trezor.png';
 import Torus from './torus.jpg';
+import Authereum from './authereum.svg';
 
 const Wrapper = styled.button`
   width: 250px;
@@ -48,6 +49,7 @@ export default function WalletConnectButton(props) {
     TrustWallet,
     Trezor,
     Torus,
+    Authereum,
   };
   const icon = icons[name];
 
