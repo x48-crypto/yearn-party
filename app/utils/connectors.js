@@ -1,7 +1,7 @@
-import { Connectors } from 'web3-react';
 import { InjectedConnector } from '@web3-react/injected-connector';
 import { TrezorConnector } from '@web3-react/trezor-connector';
 import { TorusConnector } from '@web3-react/torus-connector';
+import { AuthereumConnector } from '@web3-react/authereum-connector';
 
 export const Injected = new InjectedConnector({
   supportedChainIds: [1, 3, 4, 5, 42],
@@ -26,12 +26,14 @@ export const Trezor = new TrezorConnector({
 });
 
 export const Torus = new TorusConnector({ chainId: 1 });
+export const Authereum = new AuthereumConnector({ chainId: 1 });
 
 const connectors = {
   MetaMask,
   TrustWallet,
   Torus,
   Trezor,
+  Authereum,
 };
 
 export default connectors;
